@@ -26,6 +26,11 @@ struct Ground {
     movement_speed : f32
 }
 
+#[derive(Component)]
+struct Player {
+    y: f32
+}
+
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
 
@@ -51,6 +56,9 @@ fn setup(
     },
     animation_indicies,
     AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+    Player {
+        y: 0.
+    }
     ));
 
     let ground_texture_handle = asset_server.load("textures/objects/ground_long.png");
@@ -97,7 +105,9 @@ fn move_ground_system(time: Res<Time> ,mut query: Query<(
 fn gravity_system(
     time: Res<Time>,
     mut ground_query: Query<(&Ground, &mut Transform)>,
-
+    mut player_query: Query<(&Player, &mut Transform)>,
 ) {
 
+    let (ground, ground_transform) = ground_query.single_mut();
+    let (player, player_transform) = player_query.single_mut();
 }
