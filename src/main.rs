@@ -1,11 +1,16 @@
 use std::time;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::collide_aabb::{collide, Collision}};
 
 const BOUNDS: Vec2 = Vec2::new(1200.0, 640.0);
-const GROUND_Y: f32 = 350. - BOUNDS.y;
+const PLAYER_SPAWN_X: f32 = 100. -BOUNDS.x / 2.;
+const GROUND_Y: f32 = 50. -BOUNDS.y / 2.;
+const PLAYER_SIZE: Vec2 = Vec2::new(140., 90.);
+const GROUND_SIZE: Vec2 = Vec2::new(2700., 30.);
+
 
 fn main() {
+    println!("{PLAYER_SPAWN_X}, {GROUND_Y}");
     App::new()
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup)
@@ -44,14 +49,13 @@ fn setup(
     let texture_atlas = TextureAtlas::from_grid(texture_handle, Vec2::new(75.0, 45.0), 6, 1, None, None);
     let texture_atlas_handle = texture_atlases.add(texture_atlas);
 
-    let horizontal_margin = BOUNDS.x / 4.0;
     let animation_indicies = AnimationIndices {first: 0, last:5};
 
     commands.spawn(Camera2dBundle::default());
     commands.spawn((SpriteSheetBundle {
         texture_atlas: texture_atlas_handle,
         sprite: TextureAtlasSprite::new(animation_indicies.first),
-        transform: Transform::from_scale(Vec3::splat(2.0)).with_translation(Vec3::new(-horizontal_margin, 100. -horizontal_margin, 1.)),
+        transform: Transform::from_scale(Vec3::splat(2.0)).with_translation(Vec3::new(PLAYER_SPAWN_X, 0., 1.)),
         ..default()
     },
         animation_indicies,
@@ -69,7 +73,7 @@ fn setup(
                 ..default()
             },
             Ground {
-                movement_speed: 500.0
+                movement_speed: 300.0
             }
             ));
 }
@@ -98,17 +102,28 @@ fn move_ground_system(time: Res<Time> ,mut query: Query<(
 &Ground, &mut Transform
 )>) {
     let (ground, mut transform) = query.single_mut();
-    transform.translation.x -= 150. * time.delta_seconds();
+    transform.translation.x -= ground.movement_speed * time.delta_seconds();
 
 }
 
 fn gravity_system(
     time: Res<Time>,
     mut player_query: Query<(&Player, &mut Transform)>,
+    ground_query: Query<&Transform, (With<Ground>, Without<Player>)>
 ) {
-    let (player, mut transform) = player_query.single_mut();
-    if transform.translation.y > GROUND_Y + 150.0 {
-        transform.translation.y -= 500. * time.delta_seconds();
+    let (player, mut player_transform) = player_query.single_mut();
+    let ground_transform = ground_query.single();
+    let collision = collide(
+        player_transform.translation,
+        PLAYER_SIZE,
+        ground_transform.translation,
+        GROUND_SIZE
+    );
+
+    if let Some(collision) = collision {
+
+    } else {
+        player_transform.translation.y -= 500. * time.delta_seconds();
     }
 
 }
