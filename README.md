@@ -1,8 +1,8 @@
 #Tricycle Asia
 
- ![ Alt text](tricycle.gif) / ! [](tricycle. gif)
+ ![ Alt text](tricycle.gif) / ! [](tricycle.gif)
 
-##What is Tricycle Asia?
+## What is Tricycle Asia?
 
 Trycicle Asia is game written in Rust using the Bevy open-source game engine.
 
