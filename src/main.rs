@@ -45,6 +45,7 @@ fn main() {
         .add_system(animate_sprite_system)
         .add_system(move_ground_system)
         .add_system(gravity_system)
+        .add_system(jump_system)
         .add_system(bevy::window::close_on_esc)
         .run();
 }
@@ -119,13 +120,15 @@ fn move_ground_system(time: Res<Time>,mut game_state : ResMut<GameState>,mut com
         transform.translation.x -= ground.movement_speed * time.delta_seconds();
         let transform_end_x = transform.translation.x + ground.length;
         let ground_spawn_x = BOUNDS.x * 2.;
-        //println!("Current ground entity : {:?}, has trans x on the right : {}, and length of {}, screen bound x : {}", ground_entity, transform_end_x, ground.length, BOUNDS.x);
+
+        //Remove Ground when it's off screent
         if transform_end_x < 0. {
             if let Some(front_ground) = game_state.ground_list.pop_front() {
                 commands.entity(ground_entity).despawn();
             }
         }
 
+        //Spawn new Ground after current ground
         if transform_end_x < ground_spawn_x && game_state.ground_list.len() < 2 {
             let ground_id = commands.spawn((
                     SpriteBundle {
@@ -174,5 +177,17 @@ fn gravity_system(
     //If has_collided is false, player falls
     if !has_collided {
         player_transform.translation.y -= 500. * time.delta_seconds()
+    }
+}
+
+fn jump_system(
+    time: Res<Time>,
+    mut player_query: Query<&mut Transform, With<Player>>,
+    keyboard_input: Res<Input<KeyCode>>
+) {
+    let mut player_transform = player_query.single_mut();
+
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        player_transform.translation.y += 10000. * time.delta_seconds()
     }
 }
