@@ -1,16 +1,18 @@
 use std::collections::LinkedList;
-
-use bevy::{prelude::*, sprite::collide_aabb::{collide, Collision}};
+use rand::prelude::*;
+use bevy::{prelude::{*, system_adapter::new}, sprite::collide_aabb::{collide, Collision}, time::Stopwatch};
 
 const BOUNDS: Vec2 = Vec2::new(1200.0, 640.0);
 const PLAYER_SPAWN_X: f32 = 100. -BOUNDS.x / 2.;
-const GROUND_Y: f32 = 50. -BOUNDS.y / 2.;
+const GROUND_Y: f32 = -BOUNDS.y / 2.;
 const PLAYER_SIZE: Vec2 = Vec2::new(140., 90.);
 const GROUND_SIZE: Vec2 = Vec2::new(2700., 30.);
+const GRAVITY: f32 = 500.;
 
 #[derive(Resource, Debug)]
 struct GameState {
-    ground_list: LinkedList<Entity>
+    ground_list: LinkedList<Entity>,
+    enemy_list: LinkedList<Entity>
 }
 
 #[derive(Component)]
@@ -26,24 +28,33 @@ struct Ground {
 }
 
 #[derive(Component)]
+struct Enemy {
+    movement_speed : f32,
+    length: f32
+}
+
+#[derive(Component)]
 struct Player {
-    y: f32
+    is_jumping : bool,
+    on_ground: bool,
+    jump_duration: Stopwatch
 }
 
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
 
-fn main() {
-    println!("{PLAYER_SPAWN_X}, {GROUND_Y}");
 
+fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup)
         .insert_resource(GameState {
-           ground_list: LinkedList::new()
+           ground_list: LinkedList::new(),
+           enemy_list: LinkedList::new()
         })
         .add_system(animate_sprite_system)
         .add_system(move_ground_system)
+        .add_system(move_enemies_system)
         .add_system(gravity_system)
         .add_system(jump_system)
         .add_system(bevy::window::close_on_esc)
@@ -72,7 +83,9 @@ fn setup(
         animation_indicies,
         AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
         Player {
-            y: 0.
+            is_jumping : false,
+            on_ground: false,
+            jump_duration: Stopwatch::new()
         }
     ));
 
@@ -89,7 +102,27 @@ fn setup(
             }
             )).id();
     game_state.ground_list.push_front(ground_id);
-    }
+
+    let enemy_texture_handle = asset_server.load("textures/chars/trash-animated.png");
+    let enemy_texture_atlas = TextureAtlas::from_grid(enemy_texture_handle, Vec2::new(70., 70.), 6, 1, None, None);
+    let enemy_texture_handle = texture_atlases.add(enemy_texture_atlas);
+    let animation_indicies = AnimationIndices {first: 0, last:5};
+    let enemy_id = commands.spawn((
+            SpriteSheetBundle {
+                texture_atlas: enemy_texture_handle,
+                sprite: TextureAtlasSprite::new(animation_indicies.first),
+                transform: Transform::from_scale(Vec3::splat(1.5)).with_translation(Vec3::new(BOUNDS.x, GROUND_Y + 45., 1.)),
+                ..default()
+            },
+        animation_indicies,
+        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+        Enemy {
+            movement_speed: 300.0,
+            length: 70. * 1.5
+        }
+    )).id();
+    game_state.enemy_list.push_front(enemy_id);
+}
 
 
 fn animate_sprite_system(
@@ -123,9 +156,8 @@ fn move_ground_system(time: Res<Time>,mut game_state : ResMut<GameState>,mut com
 
         //Remove Ground when it's off screent
         if transform_end_x < 0. {
-            if let Some(front_ground) = game_state.ground_list.pop_front() {
-                commands.entity(ground_entity).despawn();
-            }
+            game_state.ground_list.pop_front();
+            commands.entity(ground_entity).despawn();
         }
 
         //Spawn new Ground after current ground
@@ -147,12 +179,31 @@ fn move_ground_system(time: Res<Time>,mut game_state : ResMut<GameState>,mut com
 
 }
 
+fn move_enemies_system(time: Res<Time>,mut game_state : ResMut<GameState>,mut commands: Commands,
+mut query: Query<(Entity,
+    &Enemy,
+    &mut Transform,
+    )>
+) {
+
+    query.for_each_mut(|(enemy_entity, enemy, mut transform)| {
+        let transform_end_x = transform.translation.x + enemy.length + BOUNDS.x / 2.;
+        if transform_end_x < 0. {
+            commands.entity(enemy_entity).despawn();
+            game_state.ground_list.pop_front();
+        }
+
+        transform.translation.x -= enemy.movement_speed * time.delta_seconds();
+    });
+}
+
+
 fn gravity_system(
     time: Res<Time>,
-    mut player_query: Query<(&Player, &mut Transform)>,
+    mut player_query: Query<(&mut Player, &mut Transform)>,
     ground_query: Query<&Transform, (With<Ground>, Without<Player>)>
 ) {
-    let (_, mut player_transform) = player_query.single_mut();
+    let (mut player, mut player_transform) = player_query.single_mut();
 
     let mut collisions:Vec<Option<Collision>> = Vec::new();
     ground_query.for_each(|ground_transform|{
@@ -173,21 +224,37 @@ fn gravity_system(
         }
     }
 
-    println!("Has collided : {:?}", has_collided);
     //If has_collided is false, player falls
-    if !has_collided {
-        player_transform.translation.y -= 500. * time.delta_seconds()
+    if !has_collided && !player.is_jumping {
+        player_transform.translation.y -= GRAVITY * time.delta_seconds();
+        player.on_ground = false;
+    } else {
+        player.on_ground = true;
     }
 }
 
 fn jump_system(
     time: Res<Time>,
-    mut player_query: Query<&mut Transform, With<Player>>,
+    mut player_query: Query<(&mut Player, &mut Transform)>,
     keyboard_input: Res<Input<KeyCode>>
 ) {
-    let mut player_transform = player_query.single_mut();
+    let (mut player, mut player_transform) = player_query.single_mut();
+    player.jump_duration.tick(time.delta());
 
-    if keyboard_input.just_pressed(KeyCode::Space) {
-        player_transform.translation.y += 10000. * time.delta_seconds()
+    if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground {
+        player.is_jumping = true;
+        player.on_ground = false;
+        player.jump_duration.reset();
+    }
+
+    if player.jump_duration.elapsed_secs() < 0.3 && player.is_jumping {
+        player_transform.translation.y += 700. * time.delta_seconds();
+    } else if player.jump_duration.elapsed_secs() < 0.4 {
+        player_transform.translation.y += 100. * time.delta_seconds();
+    }
+    else {
+        player.is_jumping = false;
     }
 }
+
+
