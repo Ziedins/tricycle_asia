@@ -1,9 +1,9 @@
 use bevy::{
-    prelude::{system_adapter::new, *},
+    prelude::*,
     sprite::collide_aabb::{collide, Collision},
     time::Stopwatch,
 };
-use rand::prelude::*;
+use rand::distributions::{Distribution, Uniform};
 use std::collections::LinkedList;
 
 const BOUNDS: Vec2 = Vec2::new(1200.0, 640.0);
@@ -11,12 +11,25 @@ const PLAYER_SPAWN_X: f32 = 100. - BOUNDS.x / 2.;
 const GROUND_Y: f32 = -BOUNDS.y / 2.;
 const PLAYER_SIZE: Vec2 = Vec2::new(140., 90.);
 const GROUND_SIZE: Vec2 = Vec2::new(2700., 30.);
+const ENEMY_SIZE: Vec2 = Vec2::splat(50.);
 const GRAVITY: f32 = 500.;
+const SCOREBOARD_FONT_SIZE: f32 = 40.0;
+const SCOREBOARD_TEXT_PADDING: Val = Val::Px(5.0);
+const TEXT_COLOR: Color = Color::rgb(0., 0., 0.);
+const SCORE_COLOR: Color = Color::rgb(142., 47., 47.);
+
+#[derive(States, Debug, Clone, Copy, Eq, Hash, PartialEq, Default)]
+enum AppState {
+    #[default]
+    InGame,
+    GameOver
+}
 
 #[derive(Resource, Debug)]
 struct GameState {
     ground_list: LinkedList<Entity>,
     enemy_list: LinkedList<Entity>,
+    score: usize,
 }
 
 #[derive(Component)]
@@ -50,16 +63,21 @@ struct AnimationTimer(Timer);
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_state::<AppState>()
         .add_startup_system(setup)
         .insert_resource(GameState {
             ground_list: LinkedList::new(),
             enemy_list: LinkedList::new(),
+            score: 0,
         })
-        .add_system(animate_sprite_system)
-        .add_system(move_ground_system)
-        .add_system(move_enemies_system)
-        .add_system(gravity_system)
-        .add_system(jump_system)
+        .add_system(animate_sprite_system.run_if(in_state(AppState::InGame)))
+        .add_system(move_ground_system.run_if(in_state(AppState::InGame)))
+        .add_system(move_enemies_system.run_if(in_state(AppState::InGame)))
+        .add_system(spawn_enemy_system.run_if(in_state(AppState::InGame)))
+        .add_system(gravity_system.run_if(in_state(AppState::InGame)))
+        .add_system(jump_system.run_if(in_state(AppState::InGame)))
+        .add_system(enemy_interact_system.run_if(in_state(AppState::InGame)))
+        .add_system(update_score.run_if(in_state(AppState::InGame)))
         .add_system(bevy::window::close_on_esc)
         .run();
 }
@@ -113,33 +131,36 @@ fn setup(
         ))
         .id();
     game_state.ground_list.push_front(ground_id);
-
-    let enemy_texture_handle = asset_server.load("textures/chars/trash-animated.png");
-    let enemy_texture_atlas =
-        TextureAtlas::from_grid(enemy_texture_handle, Vec2::new(70., 70.), 6, 1, None, None);
-    let enemy_texture_handle = texture_atlases.add(enemy_texture_atlas);
-    let animation_indicies = AnimationIndices { first: 0, last: 5 };
-    let enemy_id = commands
-        .spawn((
-            SpriteSheetBundle {
-                texture_atlas: enemy_texture_handle,
-                sprite: TextureAtlasSprite::new(animation_indicies.first),
-                transform: Transform::from_scale(Vec3::splat(1.5)).with_translation(Vec3::new(
-                    BOUNDS.x,
-                    GROUND_Y + 45.,
-                    1.,
-                )),
+    // Scoreboard
+    let font = asset_server.load("font/FiraSans-Bold.ttf");
+    commands.spawn(
+        TextBundle::from_sections([
+            TextSection::new(
+                "Score: ",
+                TextStyle {
+                    font_size: SCOREBOARD_FONT_SIZE,
+                    color: TEXT_COLOR,
+                    font: font.clone(),
+                    ..default()
+                },
+            ),
+            TextSection::from_style(TextStyle {
+                font_size: SCOREBOARD_FONT_SIZE,
+                color: SCORE_COLOR,
+                font: font.clone(),
+                ..default()
+            }),
+        ])
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: SCOREBOARD_TEXT_PADDING,
+                left: SCOREBOARD_TEXT_PADDING,
                 ..default()
             },
-            animation_indicies,
-            AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-            Enemy {
-                movement_speed: 300.0,
-                length: 70. * 1.5,
-            },
-        ))
-        .id();
-    game_state.enemy_list.push_front(enemy_id);
+            ..default()
+        }),
+    );
 }
 
 fn animate_sprite_system(
@@ -210,7 +231,7 @@ fn move_enemies_system(
         let transform_end_x = transform.translation.x + enemy.length + BOUNDS.x / 2.;
         if transform_end_x < 0. {
             commands.entity(enemy_entity).despawn();
-            game_state.ground_list.pop_front();
+            game_state.enemy_list.pop_front();
         }
 
         transform.translation.x -= enemy.movement_speed * time.delta_seconds();
@@ -267,10 +288,79 @@ fn jump_system(
     }
 
     if player.jump_duration.elapsed_secs() < 0.3 && player.is_jumping {
-        player_transform.translation.y += 700. * time.delta_seconds();
+        player_transform.translation.y += 900. * time.delta_seconds();
     } else if player.jump_duration.elapsed_secs() < 0.4 {
         player_transform.translation.y += 100. * time.delta_seconds();
     } else {
         player.is_jumping = false;
     }
+}
+
+fn spawn_enemy_system(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+    mut game_state: ResMut<GameState>,
+) {
+    if game_state.enemy_list.len() < 4 {
+        let enemy_texture_handle = asset_server.load("textures/chars/trash-animated.png");
+        let enemy_texture_atlas =
+            TextureAtlas::from_grid(enemy_texture_handle, Vec2::new(70., 70.), 6, 1, None, None);
+        let enemy_texture_handle = texture_atlases.add(enemy_texture_atlas);
+        let animation_indicies = AnimationIndices { first: 0, last: 5 };
+
+        let mut rng = rand::thread_rng();
+        let die = Uniform::from(1..7);
+        let random_distance_slot = die.sample(&mut rng);
+
+        let enemy_id = commands
+            .spawn((
+                SpriteSheetBundle {
+                    texture_atlas: enemy_texture_handle,
+                    sprite: TextureAtlasSprite::new(animation_indicies.first),
+                    transform: Transform::from_scale(Vec3::splat(1.5)).with_translation(Vec3::new(
+                        BOUNDS.x + 500. * random_distance_slot as f32,
+                        GROUND_Y + 45.,
+                        1.,
+                    )),
+                    ..default()
+                },
+                animation_indicies,
+                AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+                Enemy {
+                    movement_speed: 300.0,
+                    length: 70. * 1.5,
+                },
+            ))
+            .id();
+        game_state.enemy_list.push_front(enemy_id);
+    }
+}
+
+fn update_score(game_state: Res<GameState>, mut query: Query<&mut Text>) {
+    let mut text = query.single_mut();
+    text.sections[1].value = game_state.score.to_string();
+}
+
+fn enemy_interact_system(
+    player_transform_query: Query<&Transform, With<Player>>,
+    enemy_transforms_query: Query<&Transform, With<Enemy>>,
+    mut game_state: ResMut<GameState>,
+    mut app_state: ResMut<NextState<AppState>>
+) {
+    let player_transform = player_transform_query.single();
+    let mut collision: Option<Collision> = None;
+
+    enemy_transforms_query.for_each(|enemy_transform| {
+        if enemy_transform.translation.x < player_transform.translation.x
+        {
+            game_state.score += 1;
+        }
+
+        collision = collide(player_transform.translation, PLAYER_SIZE, enemy_transform.translation, ENEMY_SIZE);
+
+        if collision != None {
+            app_state.set(AppState::GameOver);
+        }
+    });
 }
