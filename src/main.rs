@@ -30,8 +30,8 @@ struct GameState {
     ground_list: LinkedList<Entity>,
     enemy_list: LinkedList<Entity>,
     score: usize,
-    difficulty_timer : Stopwatch,
-    difficulty_multiplier : f32
+    difficulty_timer: Stopwatch,
+    difficulty_multiplier: f32,
 }
 
 #[derive(Component)]
@@ -67,12 +67,13 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_state::<AppState>()
         .add_startup_system(setup)
+        //.add_startup_system(play_audio_system.run_if(in_state(AppState::InGame)))
         .insert_resource(GameState {
             ground_list: LinkedList::new(),
             enemy_list: LinkedList::new(),
             score: 0,
-            difficulty_timer : Stopwatch::new(),
-            difficulty_multiplier : 1.
+            difficulty_timer: Stopwatch::new(),
+            difficulty_multiplier: 1.,
         })
         .add_system(animate_sprite_system.run_if(in_state(AppState::InGame)))
         .add_system(move_ground_system.run_if(in_state(AppState::InGame)))
@@ -194,7 +195,8 @@ fn move_ground_system(
     mut query: Query<(Entity, &Ground, &mut Transform, &Handle<Image>)>,
 ) {
     query.for_each_mut(|(ground_entity, ground, mut transform, texture_handle)| {
-        transform.translation.x -= ground.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
+        transform.translation.x -=
+            ground.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
         let transform_end_x = transform.translation.x + ground.length;
         let ground_spawn_x = BOUNDS.x * 2.;
 
@@ -243,7 +245,8 @@ fn move_enemies_system(
             commands.entity(enemy_entity).despawn();
             game_state.enemy_list.pop_front();
         }
-        transform.translation.x -= enemy.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
+        transform.translation.x -=
+            enemy.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
     });
 }
 
@@ -286,6 +289,8 @@ fn jump_system(
     time: Res<Time>,
     mut player_query: Query<(&mut Player, &mut Transform)>,
     keyboard_input: Res<Input<KeyCode>>,
+    asset_server: Res<AssetServer>,
+    audio: Res<Audio>,
 ) {
     let (mut player, mut player_transform) = player_query.single_mut();
     player.jump_duration.tick(time.delta());
@@ -294,6 +299,14 @@ fn jump_system(
         player.is_jumping = true;
         player.on_ground = false;
         player.jump_duration.reset();
+        audio.play_with_settings(
+            asset_server.load("sounds/hhwuap.ogg"),
+            PlaybackSettings {
+                repeat: false,
+                volume: 0.1,
+                speed: 1.,
+            },
+        );
     }
 
     if player.jump_duration.elapsed_secs() < 0.3 && player.is_jumping {
@@ -311,7 +324,6 @@ fn spawn_enemy_system(
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
     mut game_state: ResMut<GameState>,
 ) {
-
     if game_state.enemy_list.len() < 4 {
         let enemy_texture_handle = asset_server.load("textures/chars/trash-animated.png");
         let enemy_texture_atlas =
@@ -356,7 +368,7 @@ fn enemy_interact_system(
     player_transform_query: Query<&Transform, With<Player>>,
     enemy_transforms_query: Query<&Transform, With<Enemy>>,
     mut game_state: ResMut<GameState>,
-    mut app_state: ResMut<NextState<AppState>>,
+    mut app_state: ResMut<NextState<AppState>>
 ) {
     let player_transform = player_transform_query.single();
     let mut collision: Option<Collision> = None;
@@ -377,4 +389,15 @@ fn enemy_interact_system(
             app_state.set(AppState::GameOver);
         }
     });
+}
+
+fn play_audio_system(asset_server: Res<AssetServer>, audio: Res<Audio>) {
+    audio.play_with_settings(
+        asset_server.load("sounds/hueu.ogg"),
+        PlaybackSettings {
+            repeat: true,
+            volume: 0.003,
+            speed: 1.,
+        },
+    );
 }
