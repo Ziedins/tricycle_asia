@@ -22,7 +22,7 @@ const SCORE_COLOR: Color = Color::rgb(142., 47., 47.);
 enum AppState {
     #[default]
     InGame,
-    GameOver
+    GameOver,
 }
 
 #[derive(Resource, Debug)]
@@ -30,6 +30,8 @@ struct GameState {
     ground_list: LinkedList<Entity>,
     enemy_list: LinkedList<Entity>,
     score: usize,
+    difficulty_timer : Stopwatch,
+    difficulty_multiplier : f32
 }
 
 #[derive(Component)]
@@ -69,6 +71,8 @@ fn main() {
             ground_list: LinkedList::new(),
             enemy_list: LinkedList::new(),
             score: 0,
+            difficulty_timer : Stopwatch::new(),
+            difficulty_multiplier : 1.
         })
         .add_system(animate_sprite_system.run_if(in_state(AppState::InGame)))
         .add_system(move_ground_system.run_if(in_state(AppState::InGame)))
@@ -190,7 +194,7 @@ fn move_ground_system(
     mut query: Query<(Entity, &Ground, &mut Transform, &Handle<Image>)>,
 ) {
     query.for_each_mut(|(ground_entity, ground, mut transform, texture_handle)| {
-        transform.translation.x -= ground.movement_speed * time.delta_seconds();
+        transform.translation.x -= ground.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
         let transform_end_x = transform.translation.x + ground.length;
         let ground_spawn_x = BOUNDS.x * 2.;
 
@@ -227,14 +231,19 @@ fn move_enemies_system(
     mut commands: Commands,
     mut query: Query<(Entity, &Enemy, &mut Transform)>,
 ) {
+    game_state.difficulty_timer.tick(time.delta());
+
+    if game_state.difficulty_timer.elapsed_secs() >= 4. {
+        game_state.difficulty_multiplier += 0.1;
+        game_state.difficulty_timer.reset();
+    }
     query.for_each_mut(|(enemy_entity, enemy, mut transform)| {
         let transform_end_x = transform.translation.x + enemy.length + BOUNDS.x / 2.;
         if transform_end_x < 0. {
             commands.entity(enemy_entity).despawn();
             game_state.enemy_list.pop_front();
         }
-
-        transform.translation.x -= enemy.movement_speed * time.delta_seconds();
+        transform.translation.x -= enemy.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
     });
 }
 
@@ -302,6 +311,7 @@ fn spawn_enemy_system(
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
     mut game_state: ResMut<GameState>,
 ) {
+
     if game_state.enemy_list.len() < 4 {
         let enemy_texture_handle = asset_server.load("textures/chars/trash-animated.png");
         let enemy_texture_atlas =
@@ -346,18 +356,22 @@ fn enemy_interact_system(
     player_transform_query: Query<&Transform, With<Player>>,
     enemy_transforms_query: Query<&Transform, With<Enemy>>,
     mut game_state: ResMut<GameState>,
-    mut app_state: ResMut<NextState<AppState>>
+    mut app_state: ResMut<NextState<AppState>>,
 ) {
     let player_transform = player_transform_query.single();
     let mut collision: Option<Collision> = None;
 
     enemy_transforms_query.for_each(|enemy_transform| {
-        if enemy_transform.translation.x < player_transform.translation.x
-        {
+        if enemy_transform.translation.x < player_transform.translation.x {
             game_state.score += 1;
         }
 
-        collision = collide(player_transform.translation, PLAYER_SIZE, enemy_transform.translation, ENEMY_SIZE);
+        collision = collide(
+            player_transform.translation,
+            PLAYER_SIZE,
+            enemy_transform.translation,
+            ENEMY_SIZE,
+        );
 
         if collision != None {
             app_state.set(AppState::GameOver);
