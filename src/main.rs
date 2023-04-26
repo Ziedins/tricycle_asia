@@ -391,13 +391,3 @@ fn enemy_interact_system(
     });
 }
 
-fn play_audio_system(asset_server: Res<AssetServer>, audio: Res<Audio>) {
-    audio.play_with_settings(
-        asset_server.load("sounds/hueu.ogg"),
-        PlaybackSettings {
-            repeat: true,
-            volume: 0.003,
-            speed: 1.,
-        },
-    );
-}
