@@ -12,6 +12,7 @@ const GROUND_Y: f32 = -BOUNDS.y / 2.;
 const PLAYER_SIZE: Vec2 = Vec2::new(140., 90.);
 const GROUND_SIZE: Vec2 = Vec2::new(2700., 30.);
 const ENEMY_SIZE: Vec2 = Vec2::splat(50.);
+const POWERUP_SIZE: Vec2 = Vec2::splat(70.);
 const GRAVITY: f32 = 500.;
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
 const SCOREBOARD_TEXT_PADDING: Val = Val::Px(5.0);
@@ -31,6 +32,7 @@ struct GameState {
     enemy_list: LinkedList<Entity>,
     score: usize,
     difficulty_timer: Stopwatch,
+    power_up_timer: Stopwatch,
     difficulty_multiplier: f32,
 }
 
@@ -53,6 +55,13 @@ struct Enemy {
 }
 
 #[derive(Component)]
+struct PowerUp {
+    movement_speed: f32,
+    length: f32,
+}
+
+
+#[derive(Component)]
 struct Player {
     is_jumping: bool,
     on_ground: bool,
@@ -67,21 +76,24 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_state::<AppState>()
         .add_startup_system(setup)
-        //.add_startup_system(play_audio_system.run_if(in_state(AppState::InGame)))
         .insert_resource(GameState {
             ground_list: LinkedList::new(),
             enemy_list: LinkedList::new(),
             score: 0,
             difficulty_timer: Stopwatch::new(),
+            power_up_timer: Stopwatch::new(),
             difficulty_multiplier: 1.,
         })
         .add_system(animate_sprite_system.run_if(in_state(AppState::InGame)))
         .add_system(move_ground_system.run_if(in_state(AppState::InGame)))
         .add_system(move_enemies_system.run_if(in_state(AppState::InGame)))
+        .add_system(move_powerup_system.run_if(in_state(AppState::InGame)))
+        .add_system(spawn_power_up_system.run_if(in_state(AppState::InGame)))
         .add_system(spawn_enemy_system.run_if(in_state(AppState::InGame)))
         .add_system(gravity_system.run_if(in_state(AppState::InGame)))
         .add_system(jump_system.run_if(in_state(AppState::InGame)))
         .add_system(enemy_interact_system.run_if(in_state(AppState::InGame)))
+        .add_system(power_up_interact_system.run_if(in_state(AppState::InGame)))
         .add_system(update_score.run_if(in_state(AppState::InGame)))
         .add_system(bevy::window::close_on_esc)
         .run();
@@ -250,6 +262,25 @@ fn move_enemies_system(
     });
 }
 
+fn move_powerup_system(
+    time: Res<Time>,
+    game_state: ResMut<GameState>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &PowerUp, &mut Transform)>,
+) {
+
+    query.for_each_mut(|(power_up_entity, power_up, mut transform)| {
+        let transform_end_x = transform.translation.x + power_up.length + BOUNDS.x / 2.;
+        if transform_end_x < 0. {
+            commands.entity(power_up_entity).despawn();
+        }
+        transform.translation.x -=
+            power_up.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
+    });
+}
+
+
+
 fn gravity_system(
     time: Res<Time>,
     mut player_query: Query<(&mut Player, &mut Transform)>,
@@ -324,7 +355,7 @@ fn spawn_enemy_system(
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
     mut game_state: ResMut<GameState>,
 ) {
-    if game_state.enemy_list.len() < 4 {
+    if game_state.enemy_list.len() < 3 {
         let enemy_texture_handle = asset_server.load("textures/chars/trash-animated.png");
         let enemy_texture_atlas =
             TextureAtlas::from_grid(enemy_texture_handle, Vec2::new(70., 70.), 6, 1, None, None);
@@ -359,6 +390,45 @@ fn spawn_enemy_system(
     }
 }
 
+fn spawn_power_up_system(
+    time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+    mut game_state: ResMut<GameState>
+) {
+    let random_time = Uniform::from(8.0..14.0).sample(&mut rand::thread_rng());
+    game_state.power_up_timer.tick(time.delta());
+
+    if game_state.power_up_timer.elapsed_secs() > random_time
+    {
+        game_state.power_up_timer.reset();
+        let power_up_texture_handle = asset_server.load("textures/chars/powerup-animated.png");
+        let power_up_texture_atlas = TextureAtlas::from_grid(power_up_texture_handle, Vec2::new(70.,70.), 7, 1, None, None);
+        let power_up_texture_handle = texture_atlases.add(power_up_texture_atlas);
+        let animation_indicies = AnimationIndices { first: 0, last: 6};
+        commands
+            .spawn((
+                SpriteSheetBundle {
+                    texture_atlas: power_up_texture_handle,
+                    sprite: TextureAtlasSprite::new(animation_indicies.first),
+                    transform: Transform::from_scale(Vec3::splat(1.)).with_translation(Vec3::new(
+                        BOUNDS.x + 500. * random_time as f32,
+                        0.,
+                        1.,
+                    )),
+                    ..default()
+                },
+                animation_indicies,
+                AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+                PowerUp {
+                    movement_speed: 300.0,
+                    length: 70.
+                },
+            ));
+    }
+}
+
 fn update_score(game_state: Res<GameState>, mut query: Query<&mut Text>) {
     let mut text = query.single_mut();
     text.sections[1].value = game_state.score.to_string();
@@ -387,6 +457,31 @@ fn enemy_interact_system(
 
         if collision != None {
             app_state.set(AppState::GameOver);
+        }
+    });
+}
+
+fn power_up_interact_system(
+    player_transform_query: Query<&Transform, With<Player>>,
+    power_up_transforms_query: Query<(&Transform, Entity), With<PowerUp>>,
+    mut game_state: ResMut<GameState>,
+    mut commands: Commands,
+) {
+    let player_transform = player_transform_query.single();
+    let mut collision: Option<Collision> = None;
+
+    power_up_transforms_query.for_each(|(power_up_transform, power_up_entity)| {
+        collision = collide(
+            player_transform.translation,
+            PLAYER_SIZE,
+            power_up_transform.translation,
+            POWERUP_SIZE,
+        );
+
+        if collision != None {
+            commands.entity(power_up_entity).despawn();
+            game_state.score += 150;
+            game_state.difficulty_multiplier += 1.;
         }
     });
 }
