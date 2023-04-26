@@ -295,7 +295,7 @@ fn jump_system(
     let (mut player, mut player_transform) = player_query.single_mut();
     player.jump_duration.tick(time.delta());
 
-    if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground {
+    if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground && player.jump_duration.elapsed_secs() > 0.3 {
         player.is_jumping = true;
         player.on_ground = false;
         player.jump_duration.reset();
