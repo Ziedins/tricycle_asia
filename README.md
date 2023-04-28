@@ -1,5 +1,8 @@
 #Tricycle Asia
 
+##Hosted demo
+https://flopsis.itch.io/tricycle
+
  ![ Alt text](tricycle.gif) / ! [](tricycle.gif)
 
 ## What is Tricycle Asia?
