@@ -158,14 +158,12 @@ fn setup(
                     font_size: SCOREBOARD_FONT_SIZE,
                     color: TEXT_COLOR,
                     font: font.clone(),
-                    ..default()
                 },
             ),
             TextSection::from_style(TextStyle {
                 font_size: SCOREBOARD_FONT_SIZE,
                 color: SCORE_COLOR,
-                font: font.clone(),
-                ..default()
+                font,
             }),
         ])
         .with_style(Style {
@@ -302,7 +300,7 @@ fn gravity_system(
 
     //If there's any player to ground collisions has_collided = true;
     for collision in collisions {
-        if collision != None {
+        if collision.is_some() {
             has_collided = true;
         }
     }
@@ -413,7 +411,7 @@ fn spawn_power_up_system(
                     texture_atlas: power_up_texture_handle,
                     sprite: TextureAtlasSprite::new(animation_indicies.first),
                     transform: Transform::from_scale(Vec3::splat(1.)).with_translation(Vec3::new(
-                        BOUNDS.x + 500. * random_time as f32,
+                        BOUNDS.x + 500. * random_time,
                         0.,
                         1.,
                     )),
@@ -455,7 +453,7 @@ fn enemy_interact_system(
             ENEMY_SIZE,
         );
 
-        if collision != None {
+        if collision.is_some() {
             app_state.set(AppState::GameOver);
         }
     });
@@ -478,7 +476,7 @@ fn power_up_interact_system(
             POWERUP_SIZE,
         );
 
-        if collision != None {
+        if collision.is_some() {
             commands.entity(power_up_entity).despawn();
             game_state.score += 150;
             game_state.difficulty_multiplier += 1.;
