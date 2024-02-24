@@ -1,7 +1,7 @@
 use bevy::{
     prelude::*,
     sprite::collide_aabb::{collide, Collision},
-    time::Stopwatch,
+    time::Stopwatch, ecs::system::Command,
 };
 use rand::distributions::{Distribution, Uniform};
 use std::collections::LinkedList;
@@ -66,6 +66,10 @@ struct Player {
     is_jumping: bool,
     on_ground: bool,
     jump_duration: Stopwatch,
+    press_jump_duration: Stopwatch,
+    is_jump_charging: bool,
+    charged_jump_duration: f32,
+    charged_jump_speed: f32
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -95,6 +99,7 @@ fn main() {
         .add_system(enemy_interact_system.run_if(in_state(AppState::InGame)))
         .add_system(power_up_interact_system.run_if(in_state(AppState::InGame)))
         .add_system(update_score.run_if(in_state(AppState::InGame)))
+        .add_system(end_screen_system.run_if(in_state(AppState::GameOver)))
         .add_system(bevy::window::close_on_esc)
         .run();
 }
@@ -129,6 +134,10 @@ fn setup(
             is_jumping: false,
             on_ground: false,
             jump_duration: Stopwatch::new(),
+            press_jump_duration : Stopwatch::new(),
+            is_jump_charging: false,
+            charged_jump_duration : 0.3,
+            charged_jump_speed: 700.
         },
     ));
 
@@ -210,7 +219,7 @@ fn move_ground_system(
         let transform_end_x = transform.translation.x + ground.length;
         let ground_spawn_x = BOUNDS.x * 2.;
 
-        //Remove Ground when it's off screent
+        //Remove Ground when it's off screen
         if transform_end_x < 0. {
             game_state.ground_list.pop_front();
             commands.entity(ground_entity).despawn();
@@ -323,8 +332,31 @@ fn jump_system(
 ) {
     let (mut player, mut player_transform) = player_query.single_mut();
     player.jump_duration.tick(time.delta());
+    if player.is_jump_charging {
+        player.press_jump_duration.tick(time.delta());
+    }
 
-    if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground && !player.is_jumping {
+
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        player.is_jump_charging = true;
+    }
+    if keyboard_input.just_released(KeyCode::Space) && player.on_ground && !player.is_jumping {
+
+        if player.press_jump_duration.elapsed_secs() > 0.15 {
+            player.charged_jump_duration = 0.3;
+            player.charged_jump_speed = 1300.;
+        }
+        else if player.press_jump_duration.elapsed_secs() > 0.1 {
+            player.charged_jump_duration = 0.3;
+            player.charged_jump_speed = 900.;
+        } else {
+            player.charged_jump_duration = 0.5;
+            player.charged_jump_speed = 500.;
+        }
+
+        println!("jump charge speed :{}", player.charged_jump_duration);
+        player.is_jump_charging = false;
+        player.press_jump_duration.reset();
         player.is_jumping = true;
         player.on_ground = false;
         player.jump_duration.reset();
@@ -337,10 +369,13 @@ fn jump_system(
             },
         );
     }
+    if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground && !player.is_jumping {
 
-    if player.jump_duration.elapsed_secs() < 0.3 && player.is_jumping {
-        player_transform.translation.y += 900. * time.delta_seconds();
-    } else if player.jump_duration.elapsed_secs() < 0.4 {
+    }
+
+    if player.jump_duration.elapsed_secs() < player.charged_jump_duration && player.is_jumping {
+        player_transform.translation.y += player.charged_jump_speed * time.delta_seconds();
+    } else if player.jump_duration.elapsed_secs() < player.charged_jump_duration + 0.1 {
         player_transform.translation.y += 100. * time.delta_seconds();
     } else {
         player.is_jumping = false;
@@ -482,5 +517,23 @@ fn power_up_interact_system(
             game_state.difficulty_multiplier += 1.;
         }
     });
+}
+
+fn end_screen_system(
+    mut app_state: ResMut<NextState<AppState>>,
+    keyboard_input: Res<Input<KeyCode>>,
+    mut game_state: ResMut<GameState>,
+    enemy_query: Query<(Entity, &Enemy)>,
+    mut commands: Commands,
+) {
+    if keyboard_input.just_pressed(KeyCode::R) {
+        game_state.score = 0;
+        game_state.difficulty_multiplier = 1.;
+        enemy_query.for_each(|(enemy_entity, _)| {
+            commands.entity(enemy_entity).despawn();
+            game_state.enemy_list.pop_front();
+        });
+        app_state.set(AppState::InGame);
+    }
 }
 
