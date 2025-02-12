@@ -369,9 +369,9 @@ fn jump_system(
             },
         );
     }
-    if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground && !player.is_jumping {
-
-    }
+    // if keyboard_input.just_pressed(KeyCode::Space) && player.on_ground && !player.is_jumping {
+    //
+    // }
 
     if player.jump_duration.elapsed_secs() < player.charged_jump_duration && player.is_jumping {
         player_transform.translation.y += player.charged_jump_speed * time.delta_seconds();
