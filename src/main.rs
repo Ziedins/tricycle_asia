@@ -1,7 +1,7 @@
 use bevy::{
     prelude::*,
     sprite::collide_aabb::{collide, Collision},
-    time::Stopwatch
+    time::Stopwatch,
 };
 use rand::distributions::{Distribution, Uniform};
 use std::collections::LinkedList;
@@ -60,7 +60,6 @@ struct PowerUp {
     length: f32,
 }
 
-
 #[derive(Component)]
 struct Player {
     is_jumping: bool,
@@ -69,7 +68,7 @@ struct Player {
     press_jump_duration: Stopwatch,
     is_jump_charging: bool,
     charged_jump_duration: f32,
-    charged_jump_speed: f32
+    charged_jump_speed: f32,
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -134,10 +133,10 @@ fn setup(
             is_jumping: false,
             on_ground: false,
             jump_duration: Stopwatch::new(),
-            press_jump_duration : Stopwatch::new(),
+            press_jump_duration: Stopwatch::new(),
             is_jump_charging: false,
-            charged_jump_duration : 0.3,
-            charged_jump_speed: 700.
+            charged_jump_duration: 0.3,
+            charged_jump_speed: 700.,
         },
     ));
 
@@ -275,7 +274,6 @@ fn move_powerup_system(
     mut commands: Commands,
     mut query: Query<(Entity, &PowerUp, &mut Transform)>,
 ) {
-
     query.for_each_mut(|(power_up_entity, power_up, mut transform)| {
         let transform_end_x = transform.translation.x + power_up.length + BOUNDS.x / 2.;
         if transform_end_x < 0. {
@@ -285,8 +283,6 @@ fn move_powerup_system(
             power_up.movement_speed * game_state.difficulty_multiplier * time.delta_seconds();
     });
 }
-
-
 
 fn gravity_system(
     time: Res<Time>,
@@ -336,17 +332,14 @@ fn jump_system(
         player.press_jump_duration.tick(time.delta());
     }
 
-
     if keyboard_input.just_pressed(KeyCode::Space) {
         player.is_jump_charging = true;
     }
     if keyboard_input.just_released(KeyCode::Space) && player.on_ground && !player.is_jumping {
-
         if player.press_jump_duration.elapsed_secs() > 0.15 {
             player.charged_jump_duration = 0.3;
             player.charged_jump_speed = 1300.;
-        }
-        else if player.press_jump_duration.elapsed_secs() > 0.1 {
+        } else if player.press_jump_duration.elapsed_secs() > 0.1 {
             player.charged_jump_duration = 0.3;
             player.charged_jump_speed = 900.;
         } else {
@@ -428,37 +421,42 @@ fn spawn_power_up_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-    mut game_state: ResMut<GameState>
+    mut game_state: ResMut<GameState>,
 ) {
     let random_time = Uniform::from(8.0..14.0).sample(&mut rand::thread_rng());
     game_state.power_up_timer.tick(time.delta());
 
-    if game_state.power_up_timer.elapsed_secs() > random_time
-    {
+    if game_state.power_up_timer.elapsed_secs() > random_time {
         game_state.power_up_timer.reset();
         let power_up_texture_handle = asset_server.load("textures/chars/powerup-animated.png");
-        let power_up_texture_atlas = TextureAtlas::from_grid(power_up_texture_handle, Vec2::new(70.,70.), 7, 1, None, None);
+        let power_up_texture_atlas = TextureAtlas::from_grid(
+            power_up_texture_handle,
+            Vec2::new(70., 70.),
+            7,
+            1,
+            None,
+            None,
+        );
         let power_up_texture_handle = texture_atlases.add(power_up_texture_atlas);
-        let animation_indicies = AnimationIndices { first: 0, last: 6};
-        commands
-            .spawn((
-                SpriteSheetBundle {
-                    texture_atlas: power_up_texture_handle,
-                    sprite: TextureAtlasSprite::new(animation_indicies.first),
-                    transform: Transform::from_scale(Vec3::splat(1.)).with_translation(Vec3::new(
-                        BOUNDS.x + 500. * random_time,
-                        0.,
-                        1.,
-                    )),
-                    ..default()
-                },
-                animation_indicies,
-                AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-                PowerUp {
-                    movement_speed: 300.0,
-                    length: 70.
-                },
-            ));
+        let animation_indicies = AnimationIndices { first: 0, last: 6 };
+        commands.spawn((
+            SpriteSheetBundle {
+                texture_atlas: power_up_texture_handle,
+                sprite: TextureAtlasSprite::new(animation_indicies.first),
+                transform: Transform::from_scale(Vec3::splat(1.)).with_translation(Vec3::new(
+                    BOUNDS.x + 500. * random_time,
+                    0.,
+                    1.,
+                )),
+                ..default()
+            },
+            animation_indicies,
+            AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+            PowerUp {
+                movement_speed: 300.0,
+                length: 70.,
+            },
+        ));
     }
 }
 
@@ -471,7 +469,7 @@ fn enemy_interact_system(
     player_transform_query: Query<&Transform, With<Player>>,
     enemy_transforms_query: Query<&Transform, With<Enemy>>,
     mut game_state: ResMut<GameState>,
-    mut app_state: ResMut<NextState<AppState>>
+    mut app_state: ResMut<NextState<AppState>>,
 ) {
     let player_transform = player_transform_query.single();
     let mut collision: Option<Collision> = None;
@@ -536,4 +534,3 @@ fn end_screen_system(
         app_state.set(AppState::InGame);
     }
 }
-
